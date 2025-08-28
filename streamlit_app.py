@@ -30,6 +30,8 @@ if "client" not in st.session_state:
 if "generated_videos_dir" not in st.session_state:
     st.session_state.generated_videos_dir = Path("generated_videos")
     st.session_state.generated_videos_dir.mkdir(exist_ok=True)
+if "renaming_session_id" not in st.session_state:
+    st.session_state.renaming_session_id = None
 
 # Constants
 ASPECT_RATIOS = {
@@ -73,6 +75,17 @@ def delete_session(session_id: str):
         del st.session_state.sessions[session_id]
         if st.session_state.current_session_id == session_id:
             st.session_state.current_session_id = None
+
+
+def rename_session(session_id: str, new_name: str):
+    """Rename a session and persist the change"""
+    if not new_name:
+        return
+    session = st.session_state.sessions.get(session_id)
+    if not session:
+        return
+    session["name"] = new_name
+    save_sessions_to_file()
 
 
 def save_sessions_to_file():
@@ -356,14 +369,41 @@ def main():
                         st.session_state.current_session_id = session_id
                         st.rerun()
                 with col2:
-                    if st.button("Rename", key=f"rename_{session_id}"):
-                        # You could add rename functionality here
-                        pass
+                    if st.session_state.renaming_session_id == session_id:
+                        if st.button(
+                            "Save",
+                            key=f"save_rename_btn_{session_id}",
+                        ):
+                            new_name = st.session_state.get(
+                                f"rename_input_{session_id}",
+                                session["name"],
+                            )
+                            rename_session(session_id, new_name)
+                            st.session_state.renaming_session_id = None
+                            st.rerun()
+                    else:
+                        if st.button("✏️", key=f"rename_{session_id}"):
+                            st.session_state.renaming_session_id = session_id
                 with col3:
                     if st.button("🗑️", key=f"delete_{session_id}"):
                         delete_session(session_id)
                         save_sessions_to_file()
                         st.rerun()
+
+                if st.session_state.renaming_session_id == session_id:
+                    new_name = st.text_input(
+                        "New name",
+                        value=session["name"],
+                        key=f"rename_input_{session_id}",
+                    )
+                    _, cancel_col = st.columns([3, 1])
+                    with cancel_col:
+                        if st.button(
+                            "Cancel",
+                            key=f"cancel_rename_{session_id}",
+                        ):
+                            st.session_state.renaming_session_id = None
+                            st.rerun()
 
         # Info section
         st.divider()
