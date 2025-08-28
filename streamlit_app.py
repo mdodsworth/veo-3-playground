@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 import uuid
 from pathlib import Path
 
@@ -12,9 +12,7 @@ try:
     from google import genai
     from google.genai import types
 except ImportError:
-    st.error(
-        "Install the Google Gen AI SDK: pip install google-genai"
-    )
+    st.error("Install the Google Gen AI SDK: pip install google-genai")
     st.stop()
 
 # Configure page
@@ -37,6 +35,12 @@ if "generated_videos_dir" not in st.session_state:
 ASPECT_RATIOS = {
     "16:9 (Widescreen)": "16:9",
     "9:16 (Portrait)": "9:16",
+    "1:1 (Square)": "1:1",
+    "4:3 (Standard)": "4:3",
+    "3:2 (Photo)": "3:2",
+    "21:9 (Cinema)": "21:9",
+    "4:5 (Portrait)": "4:5",
+    "2:3 (Portrait)": "2:3",
 }
 
 MODEL_VERSIONS = {
@@ -66,9 +70,7 @@ def delete_session(session_id: str):
         session = st.session_state.sessions[session_id]
         for generation in session.get("generations", []):
             for video in generation.get("videos", []):
-                if "local_path" in video and os.path.exists(
-                    video["local_path"]
-                ):
+                if "local_path" in video and os.path.exists(video["local_path"]):
                     try:
                         os.remove(video["local_path"])
                     except Exception:
@@ -137,7 +139,12 @@ def load_sessions_from_file():
 
 
 def generate_videos_with_veo3(
-    prompt: str, aspect_ratio: str, model_version: str, num_variations: int
+    prompt: str,
+    aspect_ratio: str,
+    model_version: str,
+    num_variations: int,
+    image_gcs_uri: Optional[str] = None,
+    image_mime_type: str = "image/png",
 ) -> List[Dict]:
     """
     Generate videos using Google's Veo 3 API
@@ -165,9 +172,17 @@ def generate_videos_with_veo3(
                 number_of_videos=1,
             )
 
-            operation = st.session_state.client.models.generate_videos(
-                model=model_version, prompt=prompt, config=config
-            )
+            request_kwargs = {
+                "model": model_version,
+                "prompt": prompt,
+                "config": config,
+            }
+            if image_gcs_uri:
+                request_kwargs["image"] = types.Image(
+                    gcs_uri=image_gcs_uri,
+                    mime_type=image_mime_type,
+                )
+            operation = st.session_state.client.models.generate_videos(**request_kwargs)
 
             # Poll the operation status until the video is ready
             poll_count = 0
@@ -197,14 +212,10 @@ def generate_videos_with_veo3(
                     f"veo3_{video_id}_"
                     f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                 )
-                video_path = (
-                    st.session_state.generated_videos_dir / video_filename
-                )
+                video_path = st.session_state.generated_videos_dir / video_filename
 
                 # Download and save the video
-                st.session_state.client.files.download(
-                    file=generated_video.video
-                )
+                st.session_state.client.files.download(file=generated_video.video)
                 generated_video.video.save(str(video_path))
 
                 # Create video data entry
@@ -326,7 +337,7 @@ def main():
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("New Session", use_container_width=True):
+            if st.button("➕ New Session", use_container_width=True):
                 new_session_id = create_new_session()
                 st.session_state.current_session_id = new_session_id
                 save_sessions_to_file()
@@ -355,7 +366,7 @@ def main():
                         # You could add rename functionality here
                         pass
                 with col3:
-                    if st.button("Delete", key=f"delete_{session_id}"):
+                    if st.button("🗑️", key=f"delete_{session_id}"):
                         delete_session(session_id)
                         save_sessions_to_file()
                         st.rerun()
@@ -372,9 +383,7 @@ def main():
         st.info("Please create or select a session to get started")
         return
 
-    current_session = st.session_state.sessions[
-        st.session_state.current_session_id
-    ]
+    current_session = st.session_state.sessions[st.session_state.current_session_id]
     st.subheader(f"Current Session: {current_session['name']}")
 
     # Video generation form
@@ -423,6 +432,22 @@ def main():
                 help="Generate multiple variations of the same prompt",
             )
 
+            image_gcs_uri = st.text_input(
+                "Image GCS URI (optional)",
+                placeholder="gs://bucket/path/to/image.png",
+                help=(
+                    "Provide a Google Cloud Storage URI to guide generation. "
+                    "Leave blank to generate from prompt only."
+                ),
+            )
+
+            image_mime_type = st.selectbox(
+                "Image MIME type",
+                options=["image/png", "image/jpeg"],
+                index=0,
+                help="MIME type for the provided image",
+            )
+
             st.markdown("**Video Duration:** 8 seconds")
             st.markdown("**Audio:** Native audio generation included")
 
@@ -446,6 +471,8 @@ def main():
                     aspect_ratio=ASPECT_RATIOS[aspect_ratio],
                     model_version=MODEL_VERSIONS[model_version],
                     num_variations=num_variations,
+                    image_gcs_uri=(image_gcs_uri or None),
+                    image_mime_type=image_mime_type,
                 )
 
                 if videos:
@@ -457,6 +484,7 @@ def main():
                             "aspect_ratio": aspect_ratio,
                             "model_version": model_version,
                             "num_variations": num_variations,
+                            "image_gcs_uri": image_gcs_uri,
                         },
                         "videos": videos,
                     }
@@ -469,9 +497,7 @@ def main():
     if current_session["generations"]:
         st.header("Generation History")
 
-        for idx, generation in enumerate(
-            reversed(current_session["generations"])
-        ):
+        for idx, generation in enumerate(reversed(current_session["generations"])):
             with st.expander(
                 (
                     f"Generation {len(current_session['generations']) - idx}: "
@@ -489,8 +515,7 @@ def main():
                     display_video_card(video, cols[i % len(cols)])
     else:
         st.info(
-            "No videos generated yet. "
-            "Use the form above to create your first video!"
+            "No videos generated yet. " "Use the form above to create your first video!"
         )
 
     # Footer
