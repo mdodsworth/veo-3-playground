@@ -6,11 +6,11 @@ authors = [
     {name = "Michael Dodsworth",email = "michael@waitify.io"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "streamlit (>=1.49.0,<2.0.0)",
     "openai (>=1.102.0,<2.0.0)",
-    "google-generativeai (>=0.8.5,<0.9.0)"
+    "google-genai (>=1.32.0,<2.0.0)",
 ]
 
 
