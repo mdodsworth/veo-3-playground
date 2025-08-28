@@ -35,12 +35,6 @@ if "generated_videos_dir" not in st.session_state:
 ASPECT_RATIOS = {
     "16:9 (Widescreen)": "16:9",
     "9:16 (Portrait)": "9:16",
-    "1:1 (Square)": "1:1",
-    "4:3 (Standard)": "4:3",
-    "3:2 (Photo)": "3:2",
-    "21:9 (Cinema)": "21:9",
-    "4:5 (Portrait)": "4:5",
-    "2:3 (Portrait)": "2:3",
 }
 
 MODEL_VERSIONS = {
