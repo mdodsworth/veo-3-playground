@@ -16,7 +16,11 @@ except ImportError:
     st.stop()
 
 # Configure page
-st.set_page_config(page_title="Veo 3 Video Generator", page_icon="🎬", layout="wide")
+st.set_page_config(
+    page_title="Veo 3 Video Generator",
+    page_icon="🎬",
+    layout="wide",
+)
 
 # Initialize session state
 if "sessions" not in st.session_state:
@@ -78,7 +82,7 @@ def delete_session(session_id: str):
 def save_sessions_to_file():
     """Save sessions to a JSON file for persistence"""
     try:
-        sessions_file = Path("veo3_sessions.json")
+        sessions_file = st.session_state.generated_videos_dir / "sessions.json"
         # Create a copy without video data for JSON serialization
         sessions_copy = {}
         for sid, session in st.session_state.sessions.items():
@@ -117,10 +121,17 @@ def save_sessions_to_file():
 def load_sessions_from_file():
     """Load sessions from a JSON file"""
     try:
-        sessions_file = Path("veo3_sessions.json")
+        sessions_file = st.session_state.generated_videos_dir / "sessions.json"
         if sessions_file.exists():
             with open(sessions_file, "r") as f:
                 st.session_state.sessions = json.load(f)
+        else:
+            legacy_file = Path("veo3_sessions.json")
+            if legacy_file.exists():
+                with open(legacy_file, "r") as f:
+                    st.session_state.sessions = json.load(f)
+                with open(sessions_file, "w") as f:
+                    json.dump(st.session_state.sessions, f, indent=2)
     except Exception as e:
         st.warning(f"Could not load previous sessions: {e}")
 
@@ -143,12 +154,15 @@ def generate_videos_with_veo3(
 
             # Update progress
             progress_text = f"Generating video {i+1} of {num_variations}..."
-            progress_bar = st.progress((i) / num_variations, text=progress_text)
+            progress_bar = st.progress(
+                (i) / num_variations,
+                text=progress_text,
+            )
 
             # Create the generation operation with aspect ratio configuration
             config = types.GenerateVideosConfig(
                 aspect_ratio=aspect_ratio,
-                number_of_videos=1,  # Generate one at a time for better control
+                number_of_videos=1,
             )
 
             operation = st.session_state.client.models.generate_videos(
@@ -160,7 +174,7 @@ def generate_videos_with_veo3(
             max_polls = 60  # Maximum 10 minutes (60 * 10 seconds)
 
             while not operation.done and poll_count < max_polls:
-                time.sleep(10)  # Wait 10 seconds between polls
+                time.sleep(10)
                 operation = st.session_state.client.operations.get(operation)
                 poll_count += 1
 
@@ -204,7 +218,7 @@ def generate_videos_with_veo3(
                 # Update progress
                 progress_bar.progress(
                     (i + 1) / num_variations,
-                    text=f"Completed video {i+1} of {num_variations}",
+                    text=(f"Completed video {i+1} " f"of {num_variations}"),
                 )
             else:
                 st.warning(
