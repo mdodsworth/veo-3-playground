@@ -3,37 +3,31 @@ import json
 import os
 from datetime import datetime
 import time
-import base64
-from typing import Dict, List, Optional
+from typing import Dict, List
 import uuid
 from pathlib import Path
-import tempfile
 
 # Google Gen AI imports
 try:
     from google import genai
     from google.genai import types
 except ImportError:
-    st.error("Please install the Google Gen AI SDK: pip install google-genai")
+    st.error("Please install the Google Gen AI SDK: " "pip install google-genai")
     st.stop()
 
 # Configure page
-st.set_page_config(
-    page_title="Veo 3 Video Generator",
-    page_icon="🎬",
-    layout="wide"
-)
+st.set_page_config(page_title="Veo 3 Video Generator", page_icon="🎬", layout="wide")
 
 # Initialize session state
-if 'sessions' not in st.session_state:
+if "sessions" not in st.session_state:
     st.session_state.sessions = {}
-if 'current_session_id' not in st.session_state:
+if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = None
-if 'api_key_configured' not in st.session_state:
+if "api_key_configured" not in st.session_state:
     st.session_state.api_key_configured = False
-if 'client' not in st.session_state:
+if "client" not in st.session_state:
     st.session_state.client = None
-if 'generated_videos_dir' not in st.session_state:
+if "generated_videos_dir" not in st.session_state:
     st.session_state.generated_videos_dir = Path("generated_videos")
     st.session_state.generated_videos_dir.mkdir(exist_ok=True)
 
@@ -55,10 +49,10 @@ def create_new_session() -> str:
     """Create a new session and return its ID"""
     session_id = str(uuid.uuid4())[:8]
     st.session_state.sessions[session_id] = {
-        'id': session_id,
-        'created_at': datetime.now().isoformat(),
-        'name': f"Session {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        'generations': []
+        "id": session_id,
+        "created_at": datetime.now().isoformat(),
+        "name": f"Session {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "generations": [],
     }
     return session_id
 
@@ -68,12 +62,12 @@ def delete_session(session_id: str):
     if session_id in st.session_state.sessions:
         # Delete video files associated with this session
         session = st.session_state.sessions[session_id]
-        for generation in session.get('generations', []):
-            for video in generation.get('videos', []):
-                if 'local_path' in video and os.path.exists(video['local_path']):
+        for generation in session.get("generations", []):
+            for video in generation.get("videos", []):
+                if "local_path" in video and os.path.exists(video["local_path"]):
                     try:
-                        os.remove(video['local_path'])
-                    except:
+                        os.remove(video["local_path"])
+                    except Exception:
                         pass
 
         del st.session_state.sessions[session_id]
@@ -89,32 +83,32 @@ def save_sessions_to_file():
         sessions_copy = {}
         for sid, session in st.session_state.sessions.items():
             sessions_copy[sid] = {
-                'id': session['id'],
-                'created_at': session['created_at'],
-                'name': session['name'],
-                'generations': []
+                "id": session["id"],
+                "created_at": session["created_at"],
+                "name": session["name"],
+                "generations": [],
             }
-            for gen in session.get('generations', []):
+            for gen in session.get("generations", []):
                 gen_copy = {
-                    'timestamp': gen['timestamp'],
-                    'prompt': gen['prompt'],
-                    'settings': gen['settings'],
-                    'videos': []
+                    "timestamp": gen["timestamp"],
+                    "prompt": gen["prompt"],
+                    "settings": gen["settings"],
+                    "videos": [],
                 }
-                for video in gen.get('videos', []):
+                for video in gen.get("videos", []):
                     video_copy = {
-                        'id': video['id'],
-                        'prompt': video['prompt'],
-                        'aspect_ratio': video['aspect_ratio'],
-                        'model_version': video['model_version'],
-                        'created_at': video['created_at'],
-                        'local_path': video.get('local_path', ''),
-                        'status': video['status']
+                        "id": video["id"],
+                        "prompt": video["prompt"],
+                        "aspect_ratio": video["aspect_ratio"],
+                        "model_version": video["model_version"],
+                        "created_at": video["created_at"],
+                        "local_path": video.get("local_path", ""),
+                        "status": video["status"],
                     }
-                    gen_copy['videos'].append(video_copy)
-                sessions_copy[sid]['generations'].append(gen_copy)
+                    gen_copy["videos"].append(video_copy)
+                sessions_copy[sid]["generations"].append(gen_copy)
 
-        with open(sessions_file, 'w') as f:
+        with open(sessions_file, "w") as f:
             json.dump(sessions_copy, f, indent=2)
     except Exception as e:
         st.error(f"Error saving sessions: {e}")
@@ -125,13 +119,15 @@ def load_sessions_from_file():
     try:
         sessions_file = Path("veo3_sessions.json")
         if sessions_file.exists():
-            with open(sessions_file, 'r') as f:
+            with open(sessions_file, "r") as f:
                 st.session_state.sessions = json.load(f)
     except Exception as e:
         st.warning(f"Could not load previous sessions: {e}")
 
 
-def generate_videos_with_veo3(prompt: str, aspect_ratio: str, model_version: str, num_variations: int) -> List[Dict]:
+def generate_videos_with_veo3(
+    prompt: str, aspect_ratio: str, model_version: str, num_variations: int
+) -> List[Dict]:
     """
     Generate videos using Google's Veo 3 API
     """
@@ -147,8 +143,7 @@ def generate_videos_with_veo3(prompt: str, aspect_ratio: str, model_version: str
 
             # Update progress
             progress_text = f"Generating video {i+1} of {num_variations}..."
-            progress_bar = st.progress(
-                (i) / num_variations, text=progress_text)
+            progress_bar = st.progress((i) / num_variations, text=progress_text)
 
             # Create the generation operation with aspect ratio configuration
             config = types.GenerateVideosConfig(
@@ -157,9 +152,7 @@ def generate_videos_with_veo3(prompt: str, aspect_ratio: str, model_version: str
             )
 
             operation = st.session_state.client.models.generate_videos(
-                model=model_version,
-                prompt=prompt,
-                config=config
+                model=model_version, prompt=prompt, config=config
             )
 
             # Poll the operation status until the video is ready
@@ -175,7 +168,10 @@ def generate_videos_with_veo3(prompt: str, aspect_ratio: str, model_version: str
                 elapsed_time = poll_count * 10
                 progress_bar.progress(
                     (i + 0.5) / num_variations,
-                    text=f"Generating video {i+1} of {num_variations}... ({elapsed_time}s elapsed)"
+                    text=(
+                        f"Generating video {i+1} of {num_variations}... "
+                        f"({elapsed_time}s elapsed)"
+                    ),
                 )
 
             if operation.done:
@@ -183,42 +179,46 @@ def generate_videos_with_veo3(prompt: str, aspect_ratio: str, model_version: str
                 generated_video = operation.response.generated_videos[0]
 
                 # Save video to local file
-                video_filename = f"veo3_{video_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+                video_filename = (
+                    f"veo3_{video_id}_"
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+                )
                 video_path = st.session_state.generated_videos_dir / video_filename
 
                 # Download and save the video
-                st.session_state.client.files.download(
-                    file=generated_video.video)
+                st.session_state.client.files.download(file=generated_video.video)
                 generated_video.video.save(str(video_path))
 
                 # Create video data entry
                 video_data = {
-                    'id': video_id,
-                    'prompt': prompt,
-                    'aspect_ratio': aspect_ratio,
-                    'model_version': model_version,
-                    'created_at': datetime.now().isoformat(),
-                    'local_path': str(video_path),
-                    'status': 'completed'
+                    "id": video_id,
+                    "prompt": prompt,
+                    "aspect_ratio": aspect_ratio,
+                    "model_version": model_version,
+                    "created_at": datetime.now().isoformat(),
+                    "local_path": str(video_path),
+                    "status": "completed",
                 }
                 videos.append(video_data)
 
                 # Update progress
                 progress_bar.progress(
                     (i + 1) / num_variations,
-                    text=f"Completed video {i+1} of {num_variations}"
+                    text=f"Completed video {i+1} of {num_variations}",
                 )
             else:
                 st.warning(
-                    f"Video {i+1} generation timed out after {max_polls * 10} seconds")
+                    f"Video {i+1} generation timed out after "
+                    f"{max_polls * 10} seconds"
+                )
                 video_data = {
-                    'id': video_id,
-                    'prompt': prompt,
-                    'aspect_ratio': aspect_ratio,
-                    'model_version': model_version,
-                    'created_at': datetime.now().isoformat(),
-                    'local_path': None,
-                    'status': 'timeout'
+                    "id": video_id,
+                    "prompt": prompt,
+                    "aspect_ratio": aspect_ratio,
+                    "model_version": model_version,
+                    "created_at": datetime.now().isoformat(),
+                    "local_path": None,
+                    "status": "timeout",
                 }
                 videos.append(video_data)
 
@@ -229,7 +229,9 @@ def generate_videos_with_veo3(prompt: str, aspect_ratio: str, model_version: str
     except Exception as e:
         st.error(f"Error generating videos: {str(e)}")
         st.info(
-            "Make sure you have access to the Veo 3 API. It may be in limited preview.")
+            "Make sure you have access to the Veo 3 API. "
+            "It may be in limited preview."
+        )
 
     return videos
 
@@ -243,10 +245,10 @@ def display_video_card(video: Dict, col):
             st.markdown(f"**Status:** {video['status']}")
 
             # Video preview
-            if video.get('local_path') and os.path.exists(video['local_path']):
+            if video.get("local_path") and os.path.exists(video["local_path"]):
                 try:
                     # Display the actual video
-                    with open(video['local_path'], 'rb') as video_file:
+                    with open(video["local_path"], "rb") as video_file:
                         video_bytes = video_file.read()
                     st.video(video_bytes)
 
@@ -256,14 +258,15 @@ def display_video_card(video: Dict, col):
                         data=video_bytes,
                         file_name=f"veo3_{video['id']}.mp4",
                         mime="video/mp4",
-                        key=f"download_{video['id']}_{video['created_at']}"
+                        key=f"download_{video['id']}_{video['created_at']}",
                     )
                 except Exception as e:
                     st.error(f"Error loading video: {e}")
-            elif video['status'] == 'timeout':
+            elif video["status"] == "timeout":
                 st.warning("⏱️ Video generation timed out")
             else:
                 st.info("🎬 Video not available")
+
 
 # Main app layout
 
@@ -284,7 +287,10 @@ def main():
         api_key = st.text_input(
             "Google AI API Key",
             type="password",
-            help="Enter your Google AI API key to use Veo 3. Get one at https://aistudio.google.com/app/apikey"
+            help=(
+                "Enter your Google AI API key to use Veo 3. "
+                "Get one at https://aistudio.google.com/app/apikey"
+            ),
         )
         if api_key:
             try:
@@ -322,7 +328,7 @@ def main():
                     if st.button(
                         f"📂 {session['name'][:20]}",
                         key=f"select_{session_id}",
-                        use_container_width=True
+                        use_container_width=True,
                     ):
                         st.session_state.current_session_id = session_id
                         st.rerun()
@@ -360,16 +366,23 @@ def main():
         with col1:
             prompt = st.text_area(
                 "Prompt",
-                placeholder="Describe the video you want to generate. Include details about visuals, camera movement, and any dialogue or sound effects...",
+                placeholder=(
+                    "Describe the video you want to generate. "
+                    "Include details about visuals, camera movement, "
+                    "and any dialogue or sound effects..."
+                ),
                 height=150,
-                help="Be descriptive! Include visual details, camera angles, movements, and any audio elements you want."
+                help=(
+                    "Be descriptive! Include visual details, camera angles, "
+                    "movements, and any audio elements you want."
+                ),
             )
 
             aspect_ratio = st.selectbox(
                 "Aspect Ratio",
                 options=list(ASPECT_RATIOS.keys()),
                 index=0,
-                help="Choose the aspect ratio for your video"
+                help="Choose the aspect ratio for your video",
             )
 
         with col2:
@@ -377,23 +390,24 @@ def main():
                 "Model Version",
                 options=list(MODEL_VERSIONS.keys()),
                 index=0,
-                help="Preview model offers higher quality, Fast model generates quicker"
+                help=(
+                    "Preview model offers higher quality, "
+                    "Fast model generates quicker"
+                ),
             )
 
             num_variations = st.select_slider(
                 "Number of Variations",
                 options=[1, 2, 4],
                 value=1,
-                help="Generate multiple variations of the same prompt"
+                help="Generate multiple variations of the same prompt",
             )
 
             st.markdown("**Video Duration:** 8 seconds")
             st.markdown("**Audio:** Native audio generation included")
 
         generate_button = st.form_submit_button(
-            "🚀 Generate Videos",
-            type="primary",
-            use_container_width=True
+            "🚀 Generate Videos", type="primary", use_container_width=True
         )
 
     # Handle video generation
@@ -403,51 +417,58 @@ def main():
         elif not st.session_state.api_key_configured:
             st.error("Please configure your API key in the sidebar")
         else:
-            with st.spinner(f"🎬 Generating {num_variations} video(s)... This may take a few minutes."):
+            with st.spinner(
+                f"🎬 Generating {num_variations} video(s)... "
+                "This may take a few minutes."
+            ):
                 videos = generate_videos_with_veo3(
                     prompt=prompt,
                     aspect_ratio=ASPECT_RATIOS[aspect_ratio],
                     model_version=MODEL_VERSIONS[model_version],
-                    num_variations=num_variations
+                    num_variations=num_variations,
                 )
 
                 if videos:
                     # Add to current session
                     generation = {
-                        'timestamp': datetime.now().isoformat(),
-                        'prompt': prompt,
-                        'settings': {
-                            'aspect_ratio': aspect_ratio,
-                            'model_version': model_version,
-                            'num_variations': num_variations,
+                        "timestamp": datetime.now().isoformat(),
+                        "prompt": prompt,
+                        "settings": {
+                            "aspect_ratio": aspect_ratio,
+                            "model_version": model_version,
+                            "num_variations": num_variations,
                         },
-                        'videos': videos
+                        "videos": videos,
                     }
-                    current_session['generations'].append(generation)
+                    current_session["generations"].append(generation)
                     save_sessions_to_file()
                     st.success(f"✅ Generated {len(videos)} video(s)!")
                     st.rerun()
 
     # Display generation history
-    if current_session['generations']:
+    if current_session["generations"]:
         st.header("📜 Generation History")
 
-        for idx, generation in enumerate(reversed(current_session['generations'])):
+        for idx, generation in enumerate(reversed(current_session["generations"])):
             with st.expander(
-                f"Generation {len(current_session['generations']) - idx}: {generation['prompt'][:50]}... "
-                f"({generation['timestamp'][:19]})",
-                expanded=(idx == 0)
+                (
+                    f"Generation {len(current_session['generations']) - idx}: "
+                    f"{generation['prompt'][:50]}... "
+                    f"({generation['timestamp'][:19]})"
+                ),
+                expanded=(idx == 0),
             ):
                 st.markdown(f"**Prompt:** {generation['prompt']}")
                 st.markdown(f"**Settings:** {generation['settings']}")
 
                 # Display videos in a grid
-                cols = st.columns(min(len(generation['videos']), 4))
-                for i, video in enumerate(generation['videos']):
+                cols = st.columns(min(len(generation["videos"]), 4))
+                for i, video in enumerate(generation["videos"]):
                     display_video_card(video, cols[i % len(cols)])
     else:
         st.info(
-            "No videos generated yet. Use the form above to create your first video!")
+            "No videos generated yet. " "Use the form above to create your first video!"
+        )
 
     # Footer
     st.divider()
