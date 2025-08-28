@@ -12,15 +12,13 @@ try:
     from google import genai
     from google.genai import types
 except ImportError:
-    st.error("Please install the Google Gen AI SDK: " "pip install google-genai")
+    st.error(
+        "Install the Google Gen AI SDK: pip install google-genai"
+    )
     st.stop()
 
 # Configure page
-st.set_page_config(
-    page_title="Veo 3 Video Generator",
-    page_icon="🎬",
-    layout="wide",
-)
+st.set_page_config(page_title="Veo 3 Video Generator", layout="wide")
 
 # Initialize session state
 if "sessions" not in st.session_state:
@@ -68,7 +66,9 @@ def delete_session(session_id: str):
         session = st.session_state.sessions[session_id]
         for generation in session.get("generations", []):
             for video in generation.get("videos", []):
-                if "local_path" in video and os.path.exists(video["local_path"]):
+                if "local_path" in video and os.path.exists(
+                    video["local_path"]
+                ):
                     try:
                         os.remove(video["local_path"])
                     except Exception:
@@ -197,10 +197,14 @@ def generate_videos_with_veo3(
                     f"veo3_{video_id}_"
                     f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                 )
-                video_path = st.session_state.generated_videos_dir / video_filename
+                video_path = (
+                    st.session_state.generated_videos_dir / video_filename
+                )
 
                 # Download and save the video
-                st.session_state.client.files.download(file=generated_video.video)
+                st.session_state.client.files.download(
+                    file=generated_video.video
+                )
                 generated_video.video.save(str(video_path))
 
                 # Create video data entry
@@ -268,7 +272,7 @@ def display_video_card(video: Dict, col):
 
                     # Download button
                     st.download_button(
-                        label="⬇️ Download Video",
+                        label="Download Video",
                         data=video_bytes,
                         file_name=f"veo3_{video['id']}.mp4",
                         mime="video/mp4",
@@ -277,9 +281,9 @@ def display_video_card(video: Dict, col):
                 except Exception as e:
                     st.error(f"Error loading video: {e}")
             elif video["status"] == "timeout":
-                st.warning("⏱️ Video generation timed out")
+                st.warning("Video generation timed out")
             else:
-                st.info("🎬 Video not available")
+                st.info("Video not available")
 
 
 # Main app layout
@@ -290,12 +294,12 @@ def main():
     if not st.session_state.sessions:
         load_sessions_from_file()
 
-    st.title("🎬 Veo 3 Video Generator")
+    st.title("Veo 3 Video Generator")
     st.markdown("Generate videos with audio using Google's Veo 3 models")
 
     # Sidebar for configuration and session management
     with st.sidebar:
-        st.header("⚙️ Configuration")
+        st.header("Configuration")
 
         # API Key configuration
         api_key = st.text_input(
@@ -310,7 +314,7 @@ def main():
             try:
                 st.session_state.client = genai.Client(api_key=api_key)
                 st.session_state.api_key_configured = True
-                st.success("✅ API Key configured")
+                st.success("API Key configured")
             except Exception as e:
                 st.error(f"Error configuring API: {e}")
                 st.session_state.api_key_configured = False
@@ -318,18 +322,18 @@ def main():
         st.divider()
 
         # Session Management
-        st.header("📁 Sessions")
+        st.header("Sessions")
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("➕ New Session", use_container_width=True):
+            if st.button("New Session", use_container_width=True):
                 new_session_id = create_new_session()
                 st.session_state.current_session_id = new_session_id
                 save_sessions_to_file()
                 st.rerun()
 
         with col2:
-            if st.button("💾 Save Sessions", use_container_width=True):
+            if st.button("Save Sessions", use_container_width=True):
                 save_sessions_to_file()
                 st.success("Sessions saved!")
 
@@ -340,18 +344,18 @@ def main():
                 col1, col2, col3 = st.columns([3, 1, 1])
                 with col1:
                     if st.button(
-                        f"📂 {session['name'][:20]}",
+                        f"Open {session['name'][:20]}",
                         key=f"select_{session_id}",
                         use_container_width=True,
                     ):
                         st.session_state.current_session_id = session_id
                         st.rerun()
                 with col2:
-                    if st.button("✏️", key=f"rename_{session_id}"):
+                    if st.button("Rename", key=f"rename_{session_id}"):
                         # You could add rename functionality here
                         pass
                 with col3:
-                    if st.button("🗑️", key=f"delete_{session_id}"):
+                    if st.button("Delete", key=f"delete_{session_id}"):
                         delete_session(session_id)
                         save_sessions_to_file()
                         st.rerun()
@@ -365,15 +369,17 @@ def main():
 
     # Main content area
     if not st.session_state.current_session_id:
-        st.info("👈 Please create or select a session to get started")
+        st.info("Please create or select a session to get started")
         return
 
-    current_session = st.session_state.sessions[st.session_state.current_session_id]
+    current_session = st.session_state.sessions[
+        st.session_state.current_session_id
+    ]
     st.subheader(f"Current Session: {current_session['name']}")
 
     # Video generation form
     with st.form("video_generation_form"):
-        st.header("🎨 Generate Videos")
+        st.header("Generate Videos")
 
         col1, col2 = st.columns(2)
 
@@ -421,7 +427,7 @@ def main():
             st.markdown("**Audio:** Native audio generation included")
 
         generate_button = st.form_submit_button(
-            "🚀 Generate Videos", type="primary", use_container_width=True
+            "Generate Videos", type="primary", use_container_width=True
         )
 
     # Handle video generation
@@ -432,7 +438,7 @@ def main():
             st.error("Please configure your API key in the sidebar")
         else:
             with st.spinner(
-                f"🎬 Generating {num_variations} video(s)... "
+                f"Generating {num_variations} video(s)... "
                 "This may take a few minutes."
             ):
                 videos = generate_videos_with_veo3(
@@ -456,14 +462,16 @@ def main():
                     }
                     current_session["generations"].append(generation)
                     save_sessions_to_file()
-                    st.success(f"✅ Generated {len(videos)} video(s)!")
+                    st.success(f"Generated {len(videos)} video(s)!")
                     st.rerun()
 
     # Display generation history
     if current_session["generations"]:
-        st.header("📜 Generation History")
+        st.header("Generation History")
 
-        for idx, generation in enumerate(reversed(current_session["generations"])):
+        for idx, generation in enumerate(
+            reversed(current_session["generations"])
+        ):
             with st.expander(
                 (
                     f"Generation {len(current_session['generations']) - idx}: "
@@ -481,13 +489,14 @@ def main():
                     display_video_card(video, cols[i % len(cols)])
     else:
         st.info(
-            "No videos generated yet. " "Use the form above to create your first video!"
+            "No videos generated yet. "
+            "Use the form above to create your first video!"
         )
 
     # Footer
     st.divider()
     st.markdown(
-        "💡 **Tips for better results:**\n"
+        "**Tips for better results:**\n"
         "- Be specific about visual details and camera movements\n"
         "- Include dialogue in quotes for speech generation\n"
         "- Describe sound effects and ambient audio\n"
