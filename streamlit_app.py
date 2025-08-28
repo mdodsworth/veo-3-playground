@@ -39,6 +39,15 @@ if "gcs_prefix" not in st.session_state:
     st.session_state.gcs_prefix = "uploads"
 if "store_videos_in_gcs" not in st.session_state:
     st.session_state.store_videos_in_gcs = False
+if "api_key_source" not in st.session_state:
+    st.session_state.api_key_source = ""
+try:
+    if "gcs_bucket" in st.secrets and not st.session_state.gcs_bucket:
+        st.session_state.gcs_bucket = st.secrets["gcs_bucket"]
+    if "gcs_prefix" in st.secrets and not st.session_state.gcs_prefix:
+        st.session_state.gcs_prefix = st.secrets["gcs_prefix"]
+except Exception:
+    pass
 
 # Constants
 ASPECT_RATIOS = {
@@ -100,6 +109,15 @@ def get_gcs_client() -> Optional[storage.Client]:
 
     Returns None if creation fails.
     """
+    # Try service account from secrets
+    try:
+        if "gcp_service_account" in st.secrets:
+            return storage.Client.from_service_account_info(
+                dict(st.secrets["gcp_service_account"])  # type: ignore
+            )
+    except Exception as e:
+        st.warning(f"Invalid GCS service account in secrets: {e}")
+    # Fallback to ADC
     try:
         return storage.Client()
     except Exception as e:
@@ -373,22 +391,57 @@ def main():
         st.header("Configuration")
 
         # API Key configuration
-        api_key = st.text_input(
-            "Google AI API Key",
-            type="password",
-            help=(
-                "Enter your Google AI API key to use Veo 3. "
-                "Get one at https://aistudio.google.com/app/apikey"
-            ),
-        )
-        if api_key:
+        # Attempt to auto-configure from secrets or environment
+        auto_api_key = None
+        try:
+            auto_api_key = st.secrets.get("google_api_key")
+            if not auto_api_key:
+                auto_api_key = st.secrets.get("GOOGLE_API_KEY")
+        except Exception:
+            pass
+        if not auto_api_key:
+            auto_api_key = os.environ.get("GOOGLE_API_KEY")
+
+        if (
+            auto_api_key
+            and not st.session_state.api_key_configured
+        ):
             try:
-                st.session_state.client = genai.Client(api_key=api_key)
+                st.session_state.client = genai.Client(
+                    api_key=auto_api_key
+                )
                 st.session_state.api_key_configured = True
-                st.success("API Key configured")
+                st.session_state.api_key_source = (
+                    "secrets" if "google_api_key" in str(st.secrets)
+                    or "GOOGLE_API_KEY" in str(st.secrets)
+                    else "env"
+                )
             except Exception as e:
-                st.error(f"Error configuring API: {e}")
+                st.warning(f"Auto API key failed: {e}")
                 st.session_state.api_key_configured = False
+
+        if not st.session_state.api_key_configured:
+            api_key = st.text_input(
+                "Google AI API Key",
+                type="password",
+                help=(
+                    "Enter your Google AI API key to use Veo 3. "
+                    "Get one at https://aistudio.google.com/app/apikey"
+                ),
+            )
+            if api_key:
+                try:
+                    st.session_state.client = genai.Client(
+                        api_key=api_key
+                    )
+                    st.session_state.api_key_configured = True
+                    st.success("API Key configured")
+                except Exception as e:
+                    st.error(f"Error configuring API: {e}")
+                    st.session_state.api_key_configured = False
+        else:
+            source = st.session_state.api_key_source or "configured"
+            st.success(f"API Key ready ({source})")
 
         st.divider()
 
@@ -550,6 +603,12 @@ def main():
                     "it will be uploaded and used to guide generation."
                 ),
             )
+            if uploaded_image:
+                st.image(
+                    uploaded_image,
+                    caption=uploaded_image.name,
+                    use_column_width=True,
+                )
 
             image_mime_type = st.selectbox(
                 "Image MIME type",
@@ -585,6 +644,18 @@ def main():
                     st.session_state.gcs_bucket,
                     blob_path,
                     image_mime_type,
+                )
+                if image_gcs_uri:
+                    st.success(f"Image uploaded to {image_gcs_uri}")
+                else:
+                    st.warning(
+                        "Image selected but upload failed. Check GCS "
+                        "bucket and credentials."
+                    )
+            elif uploaded_image and not st.session_state.gcs_bucket:
+                st.warning(
+                    "Set a GCS bucket in the sidebar to upload and use the "
+                    "reference image."
                 )
             with st.spinner(
                 f"Generating {num_variations} video(s)... "
