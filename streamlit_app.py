@@ -369,9 +369,11 @@ def main():
                         st.session_state.current_session_id = session_id
                         st.rerun()
                 with col2:
-                    if st.session_state.renaming_session_id == session_id:
+                    if (
+                        st.session_state.renaming_session_id == session_id
+                    ):
                         if st.button(
-                            "Save",
+                            "💾 Save",
                             key=f"save_rename_btn_{session_id}",
                         ):
                             new_name = st.session_state.get(
@@ -382,7 +384,9 @@ def main():
                             st.session_state.renaming_session_id = None
                             st.rerun()
                     else:
-                        if st.button("✏️", key=f"rename_{session_id}"):
+                        if st.button(
+                            "✏️", key=f"rename_{session_id}"
+                        ):
                             st.session_state.renaming_session_id = session_id
                 with col3:
                     if st.button("🗑️", key=f"delete_{session_id}"):
@@ -399,7 +403,7 @@ def main():
                     _, cancel_col = st.columns([3, 1])
                     with cancel_col:
                         if st.button(
-                            "Cancel",
+                            "✖️ Cancel",
                             key=f"cancel_rename_{session_id}",
                         ):
                             st.session_state.renaming_session_id = None
