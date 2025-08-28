@@ -38,8 +38,8 @@ ASPECT_RATIOS = {
 }
 
 MODEL_VERSIONS = {
-    "Veo 3 Preview (Quality)": "veo-3.0-generate-preview",
-    "Veo 3 Fast": "veo-3.0-generate-fast",
+    "Veo 3 Fast": "veo-3.0-fast-generate-preview",
+    "Veo 3 Quality": "veo-3.0-generate-preview",
 }
 
 # Session management functions
