@@ -3,10 +3,9 @@ import json
 import os
 from datetime import datetime
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List
 import uuid
 from pathlib import Path
-from google.cloud import storage
 
 # Google Gen AI imports
 try:
@@ -33,21 +32,8 @@ if "generated_videos_dir" not in st.session_state:
     st.session_state.generated_videos_dir.mkdir(exist_ok=True)
 if "renaming_session_id" not in st.session_state:
     st.session_state.renaming_session_id = None
-if "gcs_bucket" not in st.session_state:
-    st.session_state.gcs_bucket = ""
-if "gcs_prefix" not in st.session_state:
-    st.session_state.gcs_prefix = "uploads"
-if "store_videos_in_gcs" not in st.session_state:
-    st.session_state.store_videos_in_gcs = False
 if "api_key_source" not in st.session_state:
     st.session_state.api_key_source = ""
-try:
-    if "gcs_bucket" in st.secrets and not st.session_state.gcs_bucket:
-        st.session_state.gcs_bucket = st.secrets["gcs_bucket"]
-    if "gcs_prefix" in st.secrets and not st.session_state.gcs_prefix:
-        st.session_state.gcs_prefix = st.secrets["gcs_prefix"]
-except Exception:
-    pass
 
 # Constants
 ASPECT_RATIOS = {
@@ -102,47 +88,6 @@ def rename_session(session_id: str, new_name: str):
         return
     session["name"] = new_name
     save_sessions_to_file()
-
-
-def get_gcs_client() -> Optional[storage.Client]:
-    """Create a GCS client using ADC or service account from env.
-
-    Returns None if creation fails.
-    """
-    # Try service account from secrets
-    try:
-        if "gcp_service_account" in st.secrets:
-            return storage.Client.from_service_account_info(
-                dict(st.secrets["gcp_service_account"])  # type: ignore
-            )
-    except Exception as e:
-        st.warning(f"Invalid GCS service account in secrets: {e}")
-    # Fallback to ADC
-    try:
-        return storage.Client()
-    except Exception as e:
-        st.warning(f"GCS client unavailable: {e}")
-        return None
-
-
-def upload_bytes_to_gcs(
-    data: bytes,
-    bucket_name: str,
-    blob_path: str,
-    content_type: str,
-) -> Optional[str]:
-    """Upload bytes to GCS and return the gs:// URI on success."""
-    client = get_gcs_client()
-    if not client:
-        return None
-    try:
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(blob_path)
-        blob.upload_from_string(data, content_type=content_type)
-        return f"gs://{bucket_name}/{blob_path}"
-    except Exception as e:
-        st.error(f"GCS upload failed: {e}")
-        return None
 
 
 def save_sessions_to_file():
@@ -208,9 +153,6 @@ def generate_videos_with_veo3(
     aspect_ratio: str,
     model_version: str,
     num_variations: int,
-    image_gcs_uri: Optional[str] = None,
-    image_mime_type: str = "image/png",
-    image_bytes: Optional[bytes] = None,
 ) -> List[Dict]:
     """
     Generate videos using Google's Veo 3 API
@@ -243,16 +185,6 @@ def generate_videos_with_veo3(
                 "prompt": prompt,
                 "config": config,
             }
-            if image_bytes:
-                request_kwargs["image"] = types.Image(
-                    imageBytes=image_bytes,
-                    mimeType=image_mime_type,
-                )
-            elif image_gcs_uri:
-                request_kwargs["image"] = types.Image(
-                    gcsUri=image_gcs_uri,
-                    mimeType=image_mime_type,
-                )
             operation = st.session_state.client.models.generate_videos(**request_kwargs)
 
             # Poll the operation status until the video is ready
@@ -286,17 +218,11 @@ def generate_videos_with_veo3(
                 video_path = st.session_state.generated_videos_dir / video_filename
 
                 # Download and save the video (if content available)
-                video_gcs_uri = None
                 try:
                     st.session_state.client.files.download(file=generated_video.video)
                     generated_video.video.save(str(video_path))
                 except Exception:
-                    # If server wrote to GCS, a URI may be present
-                    video_gcs_uri = getattr(
-                        getattr(generated_video, "video", None),
-                        "uri",
-                        None,
-                    )
+                    pass
 
                 # Create video data entry
                 video_data = {
@@ -307,7 +233,6 @@ def generate_videos_with_veo3(
                     "created_at": datetime.now().isoformat(),
                     "local_path": str(video_path),
                     "status": "completed",
-                    "gcs_uri": video_gcs_uri or "",
                 }
                 videos.append(video_data)
 
@@ -372,9 +297,6 @@ def display_video_card(video: Dict, col):
                     )
                 except Exception as e:
                     st.error(f"Error loading video: {e}")
-            elif video.get("gcs_uri"):
-                st.info("Stored in Google Cloud Storage")
-                st.code(video["gcs_uri"])
             elif video["status"] == "timeout":
                 st.warning("Video generation timed out")
             else:
@@ -460,28 +382,6 @@ def main():
             if st.button("Save Sessions", use_container_width=True):
                 save_sessions_to_file()
                 st.success("Sessions saved!")
-
-        st.subheader("Cloud Storage")
-        st.text_input(
-            "GCS Bucket",
-            key="gcs_bucket",
-            placeholder="my-bucket",
-            help=(
-                "Bucket to store uploads. Requires credentials via ADC or "
-                "st.secrets for service account."
-            ),
-        )
-        st.text_input(
-            "GCS Prefix",
-            key="gcs_prefix",
-            placeholder="uploads",
-            help="Object prefix inside the bucket",
-        )
-        st.checkbox(
-            "Store generated videos in GCS",
-            key="store_videos_in_gcs",
-            help=("Also write generated videos to the configured bucket/prefix"),
-        )
 
         # List existing sessions
         if st.session_state.sessions:
@@ -594,29 +494,6 @@ def main():
                 help="Generate multiple variations of the same prompt",
             )
 
-            uploaded_image = st.file_uploader(
-                "Reference image (optional)",
-                type=["png", "jpg", "jpeg"],
-                accept_multiple_files=False,
-                help=(
-                    "Upload an image. If a GCS bucket is configured, "
-                    "it will be uploaded and used to guide generation."
-                ),
-            )
-            if uploaded_image:
-                st.image(
-                    uploaded_image,
-                    caption=uploaded_image.name,
-                    use_column_width=True,
-                )
-
-            image_mime_type = st.selectbox(
-                "Image MIME type",
-                options=["image/png", "image/jpeg"],
-                index=0,
-                help="MIME type for the provided image",
-            )
-
             st.markdown("**Video Duration:** 8 seconds")
             st.markdown("**Audio:** Native audio generation included")
 
@@ -631,37 +508,6 @@ def main():
         elif not st.session_state.api_key_configured:
             st.error("Please configure your API key in the sidebar")
         else:
-            image_gcs_uri: Optional[str] = None
-            image_bytes: Optional[bytes] = None
-            if uploaded_image and st.session_state.gcs_bucket:
-                safe_name = (
-                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
-                    f"{uploaded_image.name}"
-                )
-                blob_path = f"{st.session_state.gcs_prefix}/images/{safe_name}"
-                image_bytes_for_upload = uploaded_image.getvalue()
-                image_gcs_uri = upload_bytes_to_gcs(
-                    image_bytes_for_upload,
-                    st.session_state.gcs_bucket,
-                    blob_path,
-                    image_mime_type,
-                )
-                # Regardless of upload, use bytes for generation
-                image_bytes = image_bytes_for_upload
-                if image_gcs_uri:
-                    st.success(f"Image uploaded to {image_gcs_uri}")
-                else:
-                    st.warning(
-                        "Image selected but upload failed. Check GCS "
-                        "bucket and credentials."
-                    )
-            elif uploaded_image and not st.session_state.gcs_bucket:
-                st.warning(
-                    "Set a GCS bucket in the sidebar to upload and use the "
-                    "reference image."
-                )
-                # Still use the uploaded bytes directly
-                image_bytes = uploaded_image.getvalue()
             with st.spinner(
                 f"Generating {num_variations} video(s)... "
                 "This may take a few minutes."
@@ -671,9 +517,6 @@ def main():
                     aspect_ratio=ASPECT_RATIOS[aspect_ratio],
                     model_version=MODEL_VERSIONS[model_version],
                     num_variations=num_variations,
-                    image_gcs_uri=(image_gcs_uri or None),
-                    image_mime_type=image_mime_type,
-                    image_bytes=image_bytes,
                 )
 
                 if videos:
@@ -685,12 +528,6 @@ def main():
                             "aspect_ratio": aspect_ratio,
                             "model_version": model_version,
                             "num_variations": num_variations,
-                            "image_gcs_uri": image_gcs_uri,
-                            "image_source": (
-                                "bytes"
-                                if image_bytes
-                                else ("gcs" if image_gcs_uri else "none")
-                            ),
                         },
                         "videos": videos,
                     }
