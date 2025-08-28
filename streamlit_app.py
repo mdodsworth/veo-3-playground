@@ -210,6 +210,7 @@ def generate_videos_with_veo3(
     num_variations: int,
     image_gcs_uri: Optional[str] = None,
     image_mime_type: str = "image/png",
+    image_bytes: Optional[bytes] = None,
 ) -> List[Dict]:
     """
     Generate videos using Google's Veo 3 API
@@ -242,10 +243,15 @@ def generate_videos_with_veo3(
                 "prompt": prompt,
                 "config": config,
             }
-            if image_gcs_uri:
+            if image_bytes:
                 request_kwargs["image"] = types.Image(
-                    gcs_uri=image_gcs_uri,
-                    mime_type=image_mime_type,
+                    imageBytes=image_bytes,
+                    mimeType=image_mime_type,
+                )
+            elif image_gcs_uri:
+                request_kwargs["image"] = types.Image(
+                    gcsUri=image_gcs_uri,
+                    mimeType=image_mime_type,
                 )
             operation = st.session_state.client.models.generate_videos(**request_kwargs)
 
@@ -402,17 +408,13 @@ def main():
         if not auto_api_key:
             auto_api_key = os.environ.get("GOOGLE_API_KEY")
 
-        if (
-            auto_api_key
-            and not st.session_state.api_key_configured
-        ):
+        if auto_api_key and not st.session_state.api_key_configured:
             try:
-                st.session_state.client = genai.Client(
-                    api_key=auto_api_key
-                )
+                st.session_state.client = genai.Client(api_key=auto_api_key)
                 st.session_state.api_key_configured = True
                 st.session_state.api_key_source = (
-                    "secrets" if "google_api_key" in str(st.secrets)
+                    "secrets"
+                    if "google_api_key" in str(st.secrets)
                     or "GOOGLE_API_KEY" in str(st.secrets)
                     else "env"
                 )
@@ -431,9 +433,7 @@ def main():
             )
             if api_key:
                 try:
-                    st.session_state.client = genai.Client(
-                        api_key=api_key
-                    )
+                    st.session_state.client = genai.Client(api_key=api_key)
                     st.session_state.api_key_configured = True
                     st.success("API Key configured")
                 except Exception as e:
@@ -632,19 +632,22 @@ def main():
             st.error("Please configure your API key in the sidebar")
         else:
             image_gcs_uri: Optional[str] = None
+            image_bytes: Optional[bytes] = None
             if uploaded_image and st.session_state.gcs_bucket:
                 safe_name = (
                     f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
                     f"{uploaded_image.name}"
                 )
                 blob_path = f"{st.session_state.gcs_prefix}/images/{safe_name}"
-                image_bytes = uploaded_image.read()
+                image_bytes_for_upload = uploaded_image.getvalue()
                 image_gcs_uri = upload_bytes_to_gcs(
-                    image_bytes,
+                    image_bytes_for_upload,
                     st.session_state.gcs_bucket,
                     blob_path,
                     image_mime_type,
                 )
+                # Regardless of upload, use bytes for generation
+                image_bytes = image_bytes_for_upload
                 if image_gcs_uri:
                     st.success(f"Image uploaded to {image_gcs_uri}")
                 else:
@@ -657,6 +660,8 @@ def main():
                     "Set a GCS bucket in the sidebar to upload and use the "
                     "reference image."
                 )
+                # Still use the uploaded bytes directly
+                image_bytes = uploaded_image.getvalue()
             with st.spinner(
                 f"Generating {num_variations} video(s)... "
                 "This may take a few minutes."
@@ -668,6 +673,7 @@ def main():
                     num_variations=num_variations,
                     image_gcs_uri=(image_gcs_uri or None),
                     image_mime_type=image_mime_type,
+                    image_bytes=image_bytes,
                 )
 
                 if videos:
@@ -680,6 +686,11 @@ def main():
                             "model_version": model_version,
                             "num_variations": num_variations,
                             "image_gcs_uri": image_gcs_uri,
+                            "image_source": (
+                                "bytes"
+                                if image_bytes
+                                else ("gcs" if image_gcs_uri else "none")
+                            ),
                         },
                         "videos": videos,
                     }
